@@ -1691,6 +1691,8 @@ Rate.Rage.Income = 1
 Rate.Rage.Loss = 1
 Rate.Focus = 1
 Rate.Loyalty = 1
+# Multiplier for hunter pet happiness loss over time (lower = slower).
+Rate.Pet.Happiness.Loss = 1
 Rate.Energy = 1
 
 # Rate.Skill.Discovery. Skill Discovery Rates.

@@ -43,6 +43,26 @@
 
 extern bool IsPlayerHardcore(uint32 lowGuid);
 
+// Keep website receipt markers in storage; hide them only in the client title.
+static std::string ClientMailSubject(Mail const& mail)
+{
+    std::string const& subject = mail.subject;
+    constexpr size_t markerSize = 37; // " [HH" + 32 lowercase hex digits + "]"
+    if (mail.messageType != MAIL_NORMAL || mail.sender != 0 ||
+        mail.stationery != MAIL_STATIONERY_GM || subject.size() <= markerSize)
+        return subject;
+
+    size_t const start = subject.size() - markerSize;
+    if (subject.compare(start, 4, " [HH") != 0 || subject.back() != ']')
+        return subject;
+    for (size_t i = start + 4; i < subject.size() - 1; ++i)
+        if (!((subject[i] >= '0' && subject[i] <= '9') ||
+              (subject[i] >= 'a' && subject[i] <= 'f')))
+            return subject;
+    return subject.substr(0, start);
+}
+
+
 void WorldSession::SendMailResult(uint32 mailId, MailResponseType mailAction, MailResponseResult mailError, uint32 equipError, uint32 item_guid, uint32 item_count)
 {
     WorldPacket data(SMSG_SEND_MAIL_RESULT, (4 + 4 + 4 + (mailError == MAIL_ERR_EQUIP_ERROR ? 4 : (mailAction == MAIL_ITEM_TAKEN ? 4 + 4 : 0))));
@@ -915,7 +935,7 @@ void WorldSession::HandleGetMailList(WorldPacket& recv_data)
                 break;
         }
 
-        data << (*itr)->subject;                            // Subject string - once 00, when mail type = 3
+        data << ClientMailSubject(**itr);                            // Subject string - once 00, when mail type = 3
         data << uint32((*itr)->itemTextId);                 // sure about this
         data << uint32(0);                                  // unknown
         data << uint32((*itr)->stationery);                 // stationery (Stationery.dbc)

@@ -846,6 +846,7 @@ void Pet::LooseHappiness()
     if (IsInCombat()) // We know in combat happiness fades faster, multiplier guess
         addvalue = int32(addvalue * 1.5);
 
+    addvalue = int32(addvalue * sWorld.getConfig(CONFIG_FLOAT_RATE_PET_HAPPINESS_LOSS));
     ModifyPower(POWER_HAPPINESS, -addvalue);
 }
 
