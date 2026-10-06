@@ -381,7 +381,6 @@ void Item::SaveToDB(bool direct)
         break;
         case ITEM_REMOVED:
         {
-            static SqlStatementID delItemText;
             static SqlStatementID delInst ;
             static SqlStatementID delGifts ;
             static SqlStatementID delLoot ;
@@ -389,11 +388,10 @@ void Item::SaveToDB(bool direct)
             if (GetTransmogrification())
                 sObjectMgr.DeleteItemTransmogrifyTemplate(GetTransmogrification());
 
-            if (uint32 item_text_id = GetUInt32Value(ITEM_FIELD_ITEM_TEXT_ID))
-            {
-                SqlStatement stmt = CharacterDatabase.CreateStatement(delItemText, "DELETE FROM `item_text` WHERE `id` = ?");
-                stmt.PExecute(item_text_id);
-            }
+            // Route through the shared reference check: a mail body item carries the mail's
+            // itemTextId, and that mail row, an item_instance row or a guild bank slot
+            // may still be alive (MailHandler.cpp:1041, GuildBank.cpp:2554).
+            sObjectMgr.DeleteItemTextIfUnreferenced(GetUInt32Value(ITEM_FIELD_ITEM_TEXT_ID));
 
             SqlStatement stmt = CharacterDatabase.CreateStatement(delInst, "DELETE FROM `item_instance` WHERE `guid` = ?");
             //sTransmog.DeleteTransmogItemFromDB(guid);

@@ -4847,8 +4847,7 @@ public:
                     CharacterDatabase.PExecute("DELETE FROM `item_instance` WHERE `guid` = '%u'", item_guid);
                     CharacterDatabase.PExecute("DELETE FROM `mail_items` WHERE `mail_id` = '%u'", messageID);
                 }
-                if (itemTextId)
-                    CharacterDatabase.PExecute("DELETE FROM `item_text` WHERE `id` = '%u'", itemTextId);
+                sObjectMgr.DeleteItemTextIfUnreferenced(itemTextId, messageID);
 
                 CharacterDatabase.PExecute("UPDATE `mail` SET `isDeleted` = 1 WHERE `id` = '%u'", messageID);
                 sLog.out(LOG_MAIL_AH, "About to DELETE mail id %u with receiver LowGUID %u and item GUID %u", messageID, receiverGuid.GetCounter(),item_guid);
@@ -4930,8 +4929,7 @@ public:
                 continue;
             }
 
-            if (m->itemTextId)
-                CharacterDatabase.PExecute("DELETE FROM `item_text` WHERE `id` = '%u'", m->itemTextId);
+            sObjectMgr.DeleteItemTextIfUnreferenced(m->itemTextId, m->messageID);
 
             // deletemail = true;
             // delmails << m->messageID << ", ";
@@ -5672,6 +5670,41 @@ void ObjectMgr::LoadGuildHouses()
     } while (result->NextRow());
 }
 
+// An item_text id is "in use" while any of these still point at it:
+//   - the item_text table itself (its own high-water seed row, e.g. the
+//     900000 placeholder already inserted in production on 2026-10-01)
+//   - mail.itemTextId (mail `isDeleted = 1` rows are kept for a long time by
+//     design, so they are counted: a dangling reference can never be repaired)
+//   - item_instance.text (the mail text item that HandleMailCreateTextItem
+//     hands to the player carries the same id, MailHandler.cpp:1041)
+//   - guild_bank.text (a guild bank slot prints the same field:
+//     GuildBank.cpp:2554 writes it, :2597 reads it back, so an item that came
+//     out of a mail body can keep the id alive inside a guild bank)
+// Seeding the generator above all four makes new ids strictly monotonic, so a
+// body id can never alias an id that a surviving row still points at.
+uint32 ObjectMgr::GetMaxItemTextIdInUse() const
+{
+    uint32 maxId = 0;
+
+    std::unique_ptr<QueryResult> result(CharacterDatabase.Query("SELECT MAX(`id`) FROM `item_text`"));
+    if (result)
+        maxId = (*result)[0].GetUInt32();
+
+    result.reset(CharacterDatabase.Query("SELECT MAX(`itemTextId`) FROM `mail`"));
+    if (result && (*result)[0].GetUInt32() > maxId)
+        maxId = (*result)[0].GetUInt32();
+
+    result.reset(CharacterDatabase.Query("SELECT MAX(`text`) FROM `item_instance`"));
+    if (result && (*result)[0].GetUInt32() > maxId)
+        maxId = (*result)[0].GetUInt32();
+
+    result.reset(CharacterDatabase.Query("SELECT MAX(`text`) FROM `guild_bank`"));
+    if (result && (*result)[0].GetUInt32() > maxId)
+        maxId = (*result)[0].GetUInt32();
+
+    return maxId;
+}
+
 void ObjectMgr::SetHighestGuids()
 {
     std::unique_ptr<QueryResult> result(CharacterDatabase.Query("SELECT MAX(`guid`) FROM `characters`"));
@@ -5712,9 +5745,7 @@ void ObjectMgr::SetHighestGuids()
     if (result)
         m_MailIds.Set((*result)[0].GetUInt32() + 1);
 
-    result.reset(CharacterDatabase.Query("SELECT MAX(`id`) FROM `item_text`"));
-    if (result)
-        m_ItemTextIds.Set((*result)[0].GetUInt32() + 1);
+    m_ItemTextIds.Set(GetMaxItemTextIdInUse() + 1);
 
     result.reset(CharacterDatabase.Query("SELECT MAX(`guid`) FROM `corpse`"));
     if (result)
@@ -5738,6 +5769,34 @@ void ObjectMgr::SetHighestGuids()
 
     m_StaticGameObjectGuids.Set(m_FirstTemporaryGameObjectGuid);
     m_FirstTemporaryGameObjectGuid += sWorld.getConfig(CONFIG_UINT32_GUID_RESERVE_SIZE_GAMEOBJECT);
+}
+
+void ObjectMgr::DeleteItemTextIfUnreferenced(uint32 itemTextId, uint32 isDeletedMailId)
+{
+    if (!itemTextId)
+        return;
+
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
+        "SELECT `id` FROM `mail` WHERE `itemTextId` = '%u' AND `id` <> '%u' LIMIT 1",
+        itemTextId, isDeletedMailId));
+    if (result)
+        return;                                             // another mail still shows this body (rows with isDeleted = 1 are kept, so this also covers soft-deleted mail)
+
+    result.reset(CharacterDatabase.PQuery(
+        "SELECT `guid` FROM `item_instance` WHERE `text` = '%u' LIMIT 1", itemTextId));
+    if (result)
+        return;                                             // a mail-body item carrying this id still exists (MailHandler.cpp:1041)
+
+    // A mail body id can also travel into a guild bank slot: GuildBank.cpp:2554 sets
+    // ITEM_FIELD_ITEM_TEXT_ID from the bank slot when the item is taken, and :2597
+    // writes it back. Depositing the body item therefore keeps the same id alive.
+    result.reset(CharacterDatabase.PQuery(
+        "SELECT `guid` FROM `guild_bank` WHERE `text` = '%u' LIMIT 1", itemTextId));
+    if (result)
+        return;
+
+    CharacterDatabase.PExecute("DELETE FROM `item_text` WHERE `id` = '%u'", itemTextId);
+    m_ItemTextsMap.erase(itemTextId);                       // keep the in-memory body cache consistent with the table
 }
 
 uint32 ObjectMgr::CreateItemText(std::string text)

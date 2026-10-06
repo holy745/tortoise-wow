@@ -1053,7 +1053,19 @@ class ObjectMgr
 
         void SetHighestGuids();
 
-        // used for set initial guid counter for map local guids
+
+        // Deletes an item_text row only when nothing points at it any more, and
+        // drops the id from the in-memory body cache (m_ItemTextsMap) in the same
+        // step. Currently never deletes a body that a mail row references.
+        // isDeletedMailId: the mail being deleted in this same operation, whose
+        // row may still be present with isDeleted = 0; pass 0 when there is none.
+        void DeleteItemTextIfUnreferenced(uint32 itemTextId, uint32 isDeletedMailId = 0);
+
+        // Returns the highest item_text id that is still referenced by any
+        // mail, item_instance or guild_bank row, or 0 when nothing does.
+        // Used to seed m_ItemTextIds above every id that is still live so
+        // that a deleted item_text row can never be re-issued. Const: reads only.
+        uint32 GetMaxItemTextIdInUse() const;
         uint32 GetFirstTemporaryCreatureLowGuid() const { return m_FirstTemporaryCreatureGuid; }
         uint32 GetFirstTemporaryGameObjectLowGuid() const { return m_FirstTemporaryGameObjectGuid; }
 

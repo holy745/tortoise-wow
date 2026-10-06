@@ -88,7 +88,6 @@ void MasterPlayer::SaveMails()
     static SqlStatementID deleteMailItems ;
 
     static SqlStatementID deleteItem ;
-    static SqlStatementID deleteItemText;
     static SqlStatementID deleteMain ;
     static SqlStatementID deleteItems ;
 
@@ -145,11 +144,10 @@ void MasterPlayer::SaveMails()
                     stmt.PExecute(item.item_guid);
             }
 
-            if (m->itemTextId && m->stationery != MAIL_STATIONERY_DEFAULT)
-            {
-                SqlStatement stmt = CharacterDatabase.CreateStatement(deleteItemText, "DELETE FROM item_text WHERE id = ?");
-                stmt.PExecute(m->itemTextId);
-            }
+            // Was additionally gated on stationery != MAIL_STATIONERY_DEFAULT, which skipped the
+            // whole cleanup for every default-stationery mail (all web/console mail). The reference
+            // check is now the single gate, so the stationery heuristic is no longer needed.
+            sObjectMgr.DeleteItemTextIfUnreferenced(m->itemTextId, m->messageID);
 
             SqlStatement stmt = CharacterDatabase.CreateStatement(deleteMain, "UPDATE mail SET isDeleted = 1 WHERE id = ?");
             stmt.PExecute(m->messageID);
