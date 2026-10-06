@@ -1153,7 +1153,7 @@ class ObjectMgr
             if (!il)
                 return proto->Name1;
 
-            if (il->Name.size() < loc_idx)
+            if (il->Name.size() <= loc_idx || il->Name[loc_idx].empty())
                 return proto->Name1;
             else
                 return il->Name[loc_idx];

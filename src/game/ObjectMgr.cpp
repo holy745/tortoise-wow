@@ -9654,7 +9654,8 @@ void ObjectMgr::LoadShop()
 			if (sWorld.getConfig(CONFIG_BOOL_SEA_NETWORK))
 			{
 				//ItemName = Entry.Description_loc4;
-                ItemName = sObjectMgr.GetItemLocaleName(Entry.Item, LOCALE_zhCN);
+                int const loc_idx = sObjectMgr.GetIndexForLocale(LOCALE_zhCN);
+                ItemName = loc_idx >= 0 ? sObjectMgr.GetItemLocaleName(Entry.Item, loc_idx) : pProto->Name1;
 			}
 			else
 			{
